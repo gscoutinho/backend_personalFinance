@@ -85,8 +85,8 @@ async function dbInsertCategory(db, cat) {
 
 async function dbSelect(db, table, filters) {
     try {
-        const row = await db.get(`SELECT * FROM ${table} ${filters}`);
-        console.log('Query successful:', row);
+        const query = `SELECT * FROM ${table} ${filters}`
+        const row = await db.all(query);
         return row;
     } catch (err) {
         console.error('Error in querying database:', err.message);

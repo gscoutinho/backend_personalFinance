@@ -1,7 +1,6 @@
 const { query } = require('express');
 const {
   connect,
-  initDatabase,
   dbInsertCategory,
   dbInsertRegister,
   dbInsertUser,
@@ -52,7 +51,7 @@ async function createCategory(req, res) {
     const newSubcategories = req.body.subcategories.map(i => i).join(', ')
     const db = await connect()
     const existingCategory = await dbSelect(db, 'categories', `WHERE name='${newCategoryName}'`)
-    if (existingCategory !== undefined) {
+    if (existingCategory.length > 0){
       res.status(403).json({ message: "Category already exists in system" })
     } else {
       const newCategory = await dbInsertCategory(db, { name: newCategoryName, subcategories: newSubcategories })
@@ -73,7 +72,7 @@ async function getCategory(req, res) {
     }
     if (req.query.name && !req.query.type) {
       const cat = await dbSelect(db, 'categories', `WHERE name LIKE '%${req.query.name}%'`)
-      if (cat !== undefined) {
+      if (cat.length > 0) {
         res.status(201).json({ return: cat })
       } else {
         res.status(404).json({ return: 'Category not found in database' })
@@ -83,7 +82,7 @@ async function getCategory(req, res) {
       const queryCats = (req.query.name).split(',')
       const filter = `WHERE ` + queryCats.map(i => `name LIKE '%${i}%'`).join(' OR ')
       const cats = await dbSelect(db, 'categories', filter)
-      if (cats !== undefined) {
+      if (cats.length > 0) {
         res.status(201).json({ return: cats })
       } else {
         res.status(404).json({ return: "Categories not found in database" })
@@ -95,81 +94,101 @@ async function getCategory(req, res) {
   }
 }
 
+async function createReg(req, res){
+try {
+  const db = await connect()
+  const reg = {
+    description: req.body.description,
+    value: req.body.value,
+    category: req.body.category,
+    subcategory: req.body.subcategory,
+    timestamp: Date.parse(req.body.timestamp)
+  }
+  const newReg = await dbInsertRegister(db, reg)
+  if(newReg) {
+    res.status(201).json({
+      message: "Reg created successfully.",
+      reg: newReg
+    })
+  }else{
+    res.status(500).json({error: `unable to insert reg into database`})
+  }
+
+  await db.close()
+} catch (error) {
+  res.status(500).json({error: `controller layer - ${error.message}`})
+}
+}
+async function getRegsAll(req, res){
+  try {
+    if(req.params.id !== "all"){
+      throw new Error('Invalid params')
+    }
+    const db = await connect()
+    const regs = await dbSelect(db, 'registers', '')
+    if (regs.length > 0) {
+      res.status(201).json({return: regs})
+    }else{
+      res.status(404).json({return: 'Registers not found in database.'})
+    }
+    await db.close()
+  } catch (error) {
+    res.status(500).json({error: `controller layer - ${error.message}`})
+  }
+}
+async function getRegs(req, res){
+  try {
+    const db = await connect()
+
+    const filterPeriod = req.query.period 
+    ? `WHERE timestamp >= ${Date.parse(req.query.startDate)} AND timestamp <= ${Date.parse(req.query.endDate)}` 
+    : ""
+    
+    const filterValue = req.query.betweenValue
+    ? `AND WHERE value >= ${req.query.lowValue} AND value <= ${req.query.highValue}`
+    : req.query.lssgtrValue
+    ? `AND WHERE value ${req.query.operator} ${req.query.filterValue}`
+    : ""
+
+    const filterCategory = req.query.category
+    ? `AND WHERE category=${req.query.catValue}`
+    : req.query.categories
+    ? `AND WHERE ` + (req.query.categoriesValue).split(',').map(i => `category LIKE '%${i}%'`).join(' OR ')
+    : ""
+
+    const filterSubCategories = req.query.subcategory
+    ? `AND WHERE subcategory = ${req.query.subcategoryValue}`
+    : req.query.subcategories
+    ? `AND WHERE ` + (req.query.subcategoriesValue).split(',').map(i => `subcategory LIKE '%${i}%'`).join(' OR ')
+    : ""
+
+    const filter = filterPeriod + 
+    filterValue + 
+    filterCategory +  
+    filterSubCategories
+
+    if(req.query.filter){
+      const regs = await dbSelect(db, 'registers', filter)
+      if (regs.length > 0) {
+        res.status(201).json({return: regs})
+      }else{
+        res.status(404).json({return: 'Registers not found in database.'})
+      }
+    }else{
+      throw new Error(`code 400 - bad input from client`)
+    }
+    await db.close()
+  } catch (error) {
+    res.status(500).json({error: `controller layer - ${error.message}`})
+  }
+}
+
 module.exports = {
   getUser,
   createUser,
   createCategory,
-  getCategory
+  getCategory,
+  createReg,
+  getRegs,
+  getRegsAll
 }
-
-// exports.getAllPessoas = (req, res) => {
-//   db.all('SELECT * FROM pessoas', [], (err, rows) => {
-//     if (err) {
-//       res.status(500).send(err.message);
-//     } else {
-//       res.json(rows);
-//     }
-//   });
-// };
-
-// exports.addPessoa = (req, res) => {
-//   const { nome, idade } = req.body;
-//   if (!nome || !idade) {
-//     res.status(400).send('Nome e idade são obrigatórios');
-//     return;
-//   }
-//   const insert = 'INSERT INTO pessoas (nome, idade) VALUES (?, ?)';
-//   db.run(insert, [nome, idade], function (err) {
-//     if (err) {
-//       res.status(500).send(err.message);
-//     } else {
-//       res.status(201).json({ id: this.lastID });
-//     }
-//   });
-// };
-
-// exports.getPessoaById = (req, res) => {
-//   const id = req.params.id;
-//   db.get('SELECT * FROM pessoas WHERE id = ?', [id], (err, row) => {
-//     if (err) {
-//       res.status(500).send(err.message);
-//     } else if (!row) {
-//       res.status(404).send('Pessoa não encontrada');
-//     } else {
-//       res.json(row);
-//     }
-//   });
-// };
-
-// exports.updatePessoaById = (req, res) => {
-//   const id = req.params.id;
-//   const { nome, idade } = req.body;
-//   if (!nome || !idade) {
-//     res.status(400).send('Nome e idade são obrigatórios');
-//     return;
-//   }
-//   const update = 'UPDATE pessoas SET nome = ?, idade = ? WHERE id = ?';
-//   db.run(update, [nome, idade, id], function (err) {
-//     if (err) {
-//       res.status(500).send(err.message);
-//     } else if (this.changes === 0) {
-//       res.status(404).send('Pessoa não encontrada');
-//     } else {
-//       res.status(200).send('Pessoa atualizada com sucesso');
-//     }
-//   });
-// };
-
-// exports.deletePessoaById = (req, res) => {
-//   const id = req.params.id;
-//   const del = 'DELETE FROM pessoas WHERE id = ?';
-//   db.run(del, id, function (err) {
-//     if (err) {
-//       res.status(500).send(err.message);
-//     } else if (this.changes === 0) {
-//       res.status(404).send('Pessoa não encontrada');
-//     } else {
-//       res.status(200).send('Pessoa deletada com sucesso');
-//     }
-//   });
-// };
